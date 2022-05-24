@@ -17,7 +17,8 @@
 class shmoo_nonce: public testmethod::TestMethod {
 protected:
 	int Cap_samples;//capture samples;
-	int  expect_cnt;//expect ticket count;
+	int expect_cnt;//expect ticket count;
+	int org_freq;//original frequency
 	string vCap;//capture variable
 	string Tper;
 	string Vfrc;
@@ -38,7 +39,7 @@ protected:
 	 */
 	virtual void initialize() {
 	    addParameter("Cap_samples", "int", &Cap_samples)
-	    .setDefault("1")
+	    .setDefault("32")
 	      .setComment("the samples of digital capture");
 	    addParameter("vCap",       "string",    &vCap)
 	    .setDefault("bynonce_work_xcore")
@@ -46,6 +47,9 @@ protected:
 	    addParameter("expect_cnt",  "int",    &expect_cnt)
 	    .setDefault("7040")
 	      .setComment("the ticket counter bits");
+	    addParameter("org_freq_MHz",  "int",    &org_freq)
+	    .setDefault("650")
+	      .setComment("the original frequency");
 		addParameter("Tper", "string", &Tper).setDefault("per_40").setComment(
 				"Period Spec");
 		addParameter("Vfrc", "string", &Vfrc).setDefault("vdd").setComment(
@@ -120,6 +124,9 @@ protected:
 		cout << "Cur_T_SPEC:" << Tper << "=" << Cur_T_value << "ns" << endl;
 		fout << "Cur_T_SPEC:" << Tper << "=" << Cur_T_value << "ns" << endl;
 
+		cout << "Current Freq:" << "=" << org_freq << "MHz" << endl;
+		fout << "Current Freq:" << "=" << org_freq << "MHz" << endl;
+
 		cout << "Cur_V_SPEC:" << Vfrc << "=" << Cur_V_value << "V" << endl;
 		fout << "Cur_V_SPEC:" << Vfrc << "=" << Cur_V_value << "V" << endl;
 
@@ -148,11 +155,15 @@ protected:
 		Vmax = VScale_UL_Val;
 		cout << "T_LL_Val=" << T_LL_Val << "ns" << endl;
 		cout << "T_UL_Val=" << T_UL_Val << "ns" << endl;
+		cout << "F_UL_Val=" << org_freq*Cur_T_value/T_LL_Val << "MHz" << endl;
+		cout << "F_LL_Val=" <<  org_freq*Cur_T_value/T_UL_Val << "MHz" << endl;
 		cout << "VScale_LL_Val=" << VScale_LL_Val <<"V"<< endl;
 		cout << "VScale_UL_Val=" << VScale_UL_Val <<"V"<< endl;
 
 		fout << "T_LL_Val=" << T_LL_Val << "ns" << endl;
 		fout << "T_UL_Val=" << T_UL_Val << "ns" << endl;
+		fout << "F_LL_Val=" << org_freq*Cur_T_value/T_LL_Val << "MHz" << endl;
+		fout << "F_UL_Val=" <<  org_freq*Cur_T_value/T_UL_Val << "MHz" << endl;
 		fout << "VScale_LL_Val=" << VScale_LL_Val <<"V"<< endl;
 		fout << "VScale_UL_Val=" << VScale_UL_Val <<"V"<< endl;
 
@@ -166,8 +177,11 @@ protected:
 			return;
 		}
 
-		cout << Tper << "(nS)\t" << endl;
-		fout << Tper << "(nS)\t" << "\n";
+//		cout << Tper << "(nS)\t" << endl;
+//		fout << Tper << "(nS)\t" << "\n";
+
+		cout << "frequency" << "(MHz)\t" << endl;
+		fout << "frequency" << "(MHZ)\t" << "\n";
 
 		CONNECT();
 
@@ -175,10 +189,17 @@ protected:
 
 		if ((VScale_UL <= 1.5 && VScale_LL >= 0.5) || Vclamp_EN == 0) {
 			for (Y = 0; Y < T_points; Y++) {
+
+				 DISCONNECT();
+				 WAIT_TIME(10 ms);
+				 CONNECT();
+				 WAIT_TIME(10 ms);
+
 				period = T_UL_Val - Tstep * Y;
 				Tspec.change(Tper, period);
-				printf("%6.1f\t", period);
-				sprintf(tmp_t, "%6.1f", period);
+				printf("%6.1f\t", org_freq*Cur_T_value/period);
+				sprintf(tmp_t, "%6.1f", org_freq*Cur_T_value/period);
+
 				fout << tmp_t << "\t";
 				FLUSH(TM::APRM);
 
@@ -191,10 +212,13 @@ protected:
 
 					aiCapData = VECTOR(vCap).getVectors();//get back the capture data
 
-					DOUBLE pct_return =  aiCapData[0]/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
+					long regVal = CaptDataProcess(aiCapData);
 
-					printf("%5.2f%s", pct_return,"%");
+					DOUBLE pct_return =  double(regVal)/expect_cnt*100;//calculate the percentage of samples/(expect nonce cnt)
+//					cout<<"regval:"<<regVal<<endl;
+					printf("%5.2f%s\t", pct_return,"%");
 					sprintf(tmp_v, "%5.2f%s", pct_return,"%");
+
 					fout << tmp_v << "\t";
 				}
 				cout << endl;
@@ -207,9 +231,10 @@ protected:
 
 			{
 				DPS_Value = VScale_LL_Val + Vstep * X;
-				cout<<" ";
-				printf("%5.3f", DPS_Value);
+
+				printf("%5.3f\t", DPS_Value);
 				sprintf(tmp_v, "%5.3f", DPS_Value);
+
 				fout <<"  \t"<< tmp_v ;
 			}
 
@@ -246,6 +271,20 @@ protected:
 	 *
 	 *Note: TestMethod API should not be used in this method.
 	 */
+
+	long  CaptDataProcess(ARRAY_I  capData)
+		{
+		  long regVal= 0; //initial regVal
+			for(int i = 0; i< capData.size();i++){
+				if(i<=7) {regVal = regVal | capData[i]<<(24+i);} //bit0~7 shift as the bit 24~31 of regVal
+				else if(i>7 && i<=15) {regVal = regVal | capData[i]<<(8+i);}//bit8~15 shift as the bit 16~23 of regVal
+				else if(i>15 && i<=23) {regVal = regVal | capData[i]<<(i-8);}//bit16~23 shift as the bit 8~15 of regVal
+				else  {regVal = regVal | capData[i]<<(i-24);}//bit24~31 shift as the bit 0~7 of regVal
+			}
+
+			return regVal;
+		}
+
 	virtual void postParameterChange(const string& parameterIdentifier) {
 		//add your code
 	}
