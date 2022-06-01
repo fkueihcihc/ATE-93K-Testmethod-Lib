@@ -7,9 +7,8 @@
 /*	Attention:
  *  this method work with special capture setup as below:
  *  Transfer Mode = Serial;
- *  Sample Length in Bits = 31;31 is the Tick nonce cnt's bits
- *  Bits per Word = 31;31; equal to Sample Length in Bits
- *  Inter-Sample Skip Bits  = 1;reg has 32bits,the remaining high 1 bit need discard
+ *  Sample Length in Bits = 32;32 is the Tick nonce cnt's bits
+ *  Bits per Word = 32;32; equal to Sample Length in Bits
  *  Sample Count = 1; 1 represent only one register;
  * */
 
@@ -39,23 +38,15 @@ protected:
    */
 
 	  int 		debug_mode;//log ctrl
+	  int 		wait_ms;//wait time for connect
 	  int  		Cap_samples;//capture samples;
-	  int  		cnt_bits;//counter bits;
-	  int  		discard_bits;//discard bits from the remaining 32bit-reg bits;
 	  int  		expect_cnt;//expect ticket count;
 	  string  	vCap;//capture variable
-	  string  	cap_pin;//capture pin
-	  string	setup_pat;//pattern for setup
-	  STRING 	Gen_testTable;//flag for generate testtable
-	  STRING 	Gen_Vector_Var;//flag for auto generate vector variable
+
 
   virtual void initialize()
   {
     //Add your initialization code here
-
-	    addParameter("setup_pat",       "string",    &setup_pat)
-	    .setDefault("bynonce_setup_header_pll_PWTH_CDLY")
-	      .setComment("the pattern for setup");
 
 	    addParameter("Cap_samples",     "int",    &Cap_samples)
 	    .setDefault("1")
@@ -65,34 +56,20 @@ protected:
 	    .setDefault("bynonce_work_xcore")
 	      .setComment("the Capture variable,must be unique");
 
-	    addParameter("cnt_bits",  "int",    &cnt_bits)
-	    .setDefault("31")
-	      .setComment("the ticket counter bits");
-
-	    addParameter("discard_bits",  "int",    &discard_bits)
-	    .setDefault("1")
-	      .setComment("discard bits from 32bits reg");
 
 	    addParameter("expect_cnt",  "int",    &expect_cnt)
 	    .setDefault("7040")
 	      .setComment("the ticket counter bits");
 
-	    addParameter("cap_pin",       "string",    &cap_pin)
-	    .setDefault("RO_RI")
-	      .setComment("the Capture pin");
+	    addParameter("wait_ms", "int", &wait_ms)
+					   .setDefault("10")
+					   .setComment("wait time for connect");
 
 	    addParameter("debug_mode", "int", &debug_mode)
 					   .setDefault("0")
 					   .setOptions("0:1")
 					   .setComment("debug mode 0:no_need_ouput, 1:output_to_ui");
 
-
-		addParameter("Gen_Vector_Var",
-					"string",&Gen_Vector_Var,
-					testmethod::TM_PARAMETER_INPUT)
-					   .setOptions("Yes:No")
-					   .setDefault("No")
-			  	  	   .setComment("the flag for ctrl auto generate vector variable");
   }
 
   /**
@@ -101,47 +78,37 @@ protected:
   virtual void run()
    {
  	  static ARRAY_I		aiCapData;
+ 	  static ARRAY_I		ProcessedData;
  	  static string 		sTsName;
  	  static STRING_VECTOR 	sTestname;
- 	  char 					tmpchar[256];
-
 
  	  //initial the array
  	  aiCapData.resize(Cap_samples);
  	  aiCapData.init(0);
-// 	  sTestname.resize(Cap_samples);
-// 	  sTestname.clear();
- 	  const string mylabel=Primary.getLabel();//get pattern for add vector variable
 
- 	  if("Yes"==Gen_Vector_Var){
-		//just run 1 time or will report error
-		ON_FIRST_INVOCATION_BEGIN();
-		  discard_bits = 32 - cnt_bits;//discard_bits + cnt_bits = 32(register bits)
-		  sprintf(tmpchar,"DVVA \"%s\",DIGCAPT,\"%s\",SERI,,,,0,%d,%d,0,%d,%d,(%s)",vCap.c_str(),mylabel.c_str(),cnt_bits,cnt_bits,Cap_samples,discard_bits,cap_pin.c_str());
-		  FW_TASK(tmpchar);
-//		  cout<<tmpchar<<endl;
-		ON_FIRST_INVOCATION_END();
- 	  }
+ 	  ProcessedData.resize(Cap_samples);
+ 	  ProcessedData.init(0);
 
  	  ON_FIRST_INVOCATION_BEGIN();
+ 	  	  DISCONNECT();
+ 	  	  WAIT_TIME(wait_ms ms);
+		  CONNECT();
+		  WAIT_TIME(wait_ms ms);
 
- 	  	  CONNECT();
- 	  	  Primary.label(setup_pat);//change to setup label
- 	  	  FLUSH();
- 	  	  FUNCTIONAL_TEST();//run setup
-
- 	  	  Primary.label(mylabel);//change back initial pattern name
- 	  	  FLUSH();
  		  DIGITAL_CAPTURE_TEST();
 
 	  ON_FIRST_INVOCATION_END();
 
-	  aiCapData = VECTOR(vCap).getVectors();//get back the capture data
-	  if(debug_mode)  cout<<aiCapData<<endl;
+	  aiCapData = VECTOR(vCap).getVectors();//get back the raw capture data
 
-	  DOUBLE pct_return =  aiCapData[0]/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
+	  ProcessedData = CapDataProcess(aiCapData);//process raw data
 
-	  TestSet.cont(true).TEST("", "PCT", tmLimits, pct_return);
+	  for(int i=0;i<ProcessedData.size();i++){
+		  if(debug_mode)cout<<"ticket count:"<<ProcessedData[i]<<endl;
+		  DOUBLE pct_return =   double(ProcessedData[i])/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
+
+		  TestSet.cont(true).TEST("", "PCT", tmLimits, pct_return);
+	  }
 
 
      return;
@@ -152,6 +119,64 @@ protected:
    *
    *Note: Test Method API should not be used in this method.
    */
+  unsigned int CaptDataProcess(ARRAY_I  capData)
+	{
+	  unsigned int regVal= 0; //initial regVal
+		for(int i = 0; i< capData.size();i++){
+
+			if(i<=7) {regVal = regVal | capData[i]<<(24+i);} //bit0~7 shift as the bit 24~31 of regVal
+			else if(7<i<=15) {regVal = regVal | capData[i]<<(8+i);}//bit8~15 shift as the bit 16~23 of regVal
+			else if(16<i<=23) {regVal = regVal | capData[i]<<(i-8);}//bit16~23 shift as the bit 8~15 of regVal
+		}
+
+		return regVal;
+	}
+
+  	ARRAY_I CapDataProcess(ARRAY_I  capData){
+  		ARRAY_I processedData;
+  		processedData.resize(capData.size());
+  		processedData.init(0);
+  		for(int i=0;i<capData.size();i++){
+//  			cout<<"raw data:"<<dec<<capData[i]<<endl;
+  			unsigned int tmpWord = reverse(capData[i]);
+//  			cout<<"reverse data:"<<hex<<tmpWord<<endl;
+  			ARRAY_I tmpByte = Word2Byte(tmpWord);
+//  			cout<<"cut byte:"<<tmpByte<<endl;
+  			unsigned int ProcessedWord = (tmpByte[0]<<24)+(tmpByte[1]<<16)+(tmpByte[2]<<8)+tmpByte[3];
+  			processedData[i]= ProcessedWord;
+  		}
+  		return processedData;
+  	}
+
+  	//reverse raw 32-bit data,from MSB to LSB
+	unsigned int
+	reverse(register unsigned int x)
+	{
+//		cout<<"x:0x"<<hex<<x<<endl;
+	    x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
+	    x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
+	    x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
+	    x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
+//	    cout<<"processed x:0x"<<((x >> 16) | (x << 16))<<endl;
+	    return((x >> 16) | (x << 16));
+
+	}
+	//cut 32-bit data into 4 bytes
+  	ARRAY_I Word2Byte(unsigned int inData){
+
+  		  ARRAY_I byte;
+  		  byte.resize(4);
+  		  byte.init(0);
+
+  		  byte[0] =  0x000000ff & inData;
+  		  byte[1] = (0x0000ff00 & inData)>>8;
+  		  byte[2] = (0x00ff0000 & inData)>>16;
+  		  byte[3] = (0xff000000 & inData)>>24;
+
+  		  return byte;
+	}
+
+
 
   virtual void postParameterChange(const string& parameterIdentifier)
   {

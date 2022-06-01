@@ -69,6 +69,13 @@ class spuart_write_test: public testmethod::TestMethod {
 
 		  fr.d2s_LABEL_BEGIN("spuart_write_try",d2s_mode);
 			  	  myD2S.write(0x0,0xa5);//
+			  	  myD2S.write(0x0,0x55);//
+			  	  myD2S.write(0x0,0xa5);//
+			  	  myD2S.write(0x0,0xaa);//
+			  	  myD2S.write(0x0,0xa5);//
+			  	  myD2S.write(0x0,0x55);//
+			  	  myD2S.write(0x0,0xa5);//
+			  	  myD2S.write(0x0,0xaa);//
 		  fr.d2s_LABEL_END();
 
 	  ON_FIRST_INVOCATION_END();

@@ -52,6 +52,7 @@ protected:
 	ON_FIRST_INVOCATION_BEGIN();
 		GET_TESTSUITE_NAME(TestsuitName);
 		CONNECT();
+		WAIT_TIME(5 ms);
 		FUNCTIONAL_TEST();
 		//use high accuracy voltage meter to measure bandgap voltage
 		DigPin_Relay(mTEMP_P,"AC_OFF");
@@ -65,11 +66,11 @@ protected:
 	{
 		cout<<"Positive Voltage of TEMP_P"<<" = "<<Vout.get(mTEMP_P, site_index, 0)<<" V"<<endl;
 		cout<<"Negative Voltage of TEMP_N"<<" = "<<Vout.get(mTEMP_N, site_index, 0)<<" V"<<endl;
-		cout<<"Bandgap Voltage of TEMP"<<" = "<<Vout.get(mTEMP_P, site_index, 0) - Vout.get(mTEMP_N, site_index, 0)<<" V"<<endl;
+//		cout<<"Bandgap Voltage of TEMP"<<" = "<<abs(Vout.get(mTEMP_P, site_index, 0) - Vout.get(mTEMP_N, site_index, 0))<<" V"<<endl;
 	}
 	TESTSET().cont(TRUE).judgeAndLog_ParametricTest("",mTEMP_P,tmLimits,Vout.get(mTEMP_P,site_index, 0));
-	TESTSET().cont(TRUE).judgeAndLog_ParametricTest("",mTEMP_N,tmLimits,Vout.get(mTEMP_P,site_index, 0));
-	TESTSET().cont(TRUE).judgeAndLog_ParametricTest("","Bandgap",tmLimits,Vout.get(mTEMP_P,site_index, 0) - Vout.get(mTEMP_N, site_index, 0));
+//	TESTSET().cont(TRUE).judgeAndLog_ParametricTest("",mTEMP_N,tmLimits,Vout.get(mTEMP_N,site_index, 0));
+//	TESTSET().cont(TRUE).judgeAndLog_ParametricTest("","Bandgap",tmLimits,abs(Vout.get(mTEMP_P,site_index, 0) - Vout.get(mTEMP_N, site_index, 0)));
 
     return;
   }

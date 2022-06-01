@@ -39,7 +39,7 @@ protected:
 	 */
 	virtual void initialize() {
 	    addParameter("Cap_samples", "int", &Cap_samples)
-	    .setDefault("32")
+	    .setDefault("1")
 	      .setComment("the samples of digital capture");
 	    addParameter("vCap",       "string",    &vCap)
 	    .setDefault("bynonce_work_xcore")
@@ -93,6 +93,10 @@ protected:
 		static ARRAY_I	aiCapData;
 		aiCapData.resize(Cap_samples);
 		aiCapData.init(0);
+
+		static ARRAY_I		ProcessedData;
+	 	ProcessedData.resize(Cap_samples);
+	 	ProcessedData.init(0);
 
 		SPMU_TASK dcscale;
 
@@ -183,7 +187,7 @@ protected:
 		cout << "frequency" << "(MHz)\t" << endl;
 		fout << "frequency" << "(MHZ)\t" << "\n";
 
-		CONNECT();
+		 CONNECT();
 
 		DIGITAL_CAPTURE_TEST();
 
@@ -191,9 +195,9 @@ protected:
 			for (Y = 0; Y < T_points; Y++) {
 
 				 DISCONNECT();
-				 WAIT_TIME(10 ms);
+				 WAIT_TIME(50 ms);
 				 CONNECT();
-				 WAIT_TIME(10 ms);
+				 WAIT_TIME(50 ms);
 
 				period = T_UL_Val - Tstep * Y;
 				Tspec.change(Tper, period);
@@ -211,7 +215,12 @@ protected:
 					DIGITAL_CAPTURE_TEST();
 
 					aiCapData = VECTOR(vCap).getVectors();//get back the capture data
-
+//					ProcessedData = CapDataProcess(aiCapData);//process raw data
+//					DOUBLE pct_return = 0;
+//				  for(int i=0;i<ProcessedData.size();i++){
+//					  cout<<"ticket count:"<<ProcessedData[i]<<endl;
+//					  pct_return =   double(ProcessedData[i])/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
+//				  }
 					long regVal = CaptDataProcess(aiCapData);
 
 					DOUBLE pct_return =  double(regVal)/expect_cnt*100;//calculate the percentage of samples/(expect nonce cnt)
@@ -284,6 +293,49 @@ protected:
 
 			return regVal;
 		}
+ 	ARRAY_I CapDataProcess(ARRAY_I  capData){
+  		ARRAY_I processedData;
+  		processedData.resize(capData.size());
+  		processedData.init(0);
+  		for(int i=0;i<capData.size();i++){
+//  			cout<<"raw data:"<<dec<<capData[i]<<endl;
+  			unsigned int tmpWord = reverse(capData[i]);
+//  			cout<<"reverse data:"<<hex<<tmpWord<<endl;
+  			ARRAY_I tmpByte = Word2Byte(tmpWord);
+//  			cout<<"cut byte:"<<tmpByte<<endl;
+  			unsigned int ProcessedWord = (tmpByte[0]<<24)+(tmpByte[1]<<16)+(tmpByte[2]<<8)+tmpByte[3];
+  			processedData[i]= ProcessedWord;
+  		}
+  		return processedData;
+  	}
+
+  	//reverse raw 32-bit data,from MSB to LSB
+	unsigned int
+	reverse(register unsigned int x)
+	{
+//		cout<<"x:0x"<<hex<<x<<endl;
+	    x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
+	    x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
+	    x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
+	    x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
+//	    cout<<"processed x:0x"<<((x >> 16) | (x << 16))<<endl;
+	    return((x >> 16) | (x << 16));
+
+	}
+	//cut 32-bit data into 4 bytes
+  	ARRAY_I Word2Byte(unsigned int inData){
+
+  		  ARRAY_I byte;
+  		  byte.resize(4);
+  		  byte.init(0);
+
+  		  byte[0] =  0x000000ff & inData;
+  		  byte[1] = (0x0000ff00 & inData)>>8;
+  		  byte[2] = (0x00ff0000 & inData)>>16;
+  		  byte[3] = (0xff000000 & inData)>>24;
+
+  		  return byte;
+	}
 
 	virtual void postParameterChange(const string& parameterIdentifier) {
 		//add your code
@@ -295,7 +347,8 @@ REGISTER_TESTMETHOD("bm_ac_tml.Shmoo_PinMargin.shmoo_nonce", shmoo_nonce);
 class shmoo_nonce_multisite: public testmethod::TestMethod {
 protected:
 	int Cap_samples;//capture samples;
-	int  expect_cnt;//expect ticket count;
+	int expect_cnt;//expect ticket count;
+	int org_freq;//original frequency
 	string vCap;//capture variable
 	string Tper;
 	string Vfrc;
@@ -316,7 +369,7 @@ protected:
 	 */
 	virtual void initialize() {
 	    addParameter("Cap_samples", "int", &Cap_samples)
-	    .setDefault("1")
+	    .setDefault("32")
 	      .setComment("the samples of digital capture");
 	    addParameter("vCap",       "string",    &vCap)
 	    .setDefault("bynonce_work_xcore")
@@ -324,6 +377,9 @@ protected:
 	    addParameter("expect_cnt",  "int",    &expect_cnt)
 	    .setDefault("7040")
 	      .setComment("the ticket counter bits");
+	    addParameter("org_freq_MHz",  "int",    &org_freq)
+	    .setDefault("650")
+	      .setComment("the original frequency");
 		addParameter("Tper", "string", &Tper).setDefault("per_40").setComment(
 				"Period Spec");
 		addParameter("Vfrc", "string", &Vfrc).setDefault("vdd").setComment(
@@ -399,7 +455,8 @@ protected:
 
 			cout << "Cur_T_SPEC:" << Tper << "=" << Cur_T_value << "ns" << endl;
 			fout << "Cur_T_SPEC:" << Tper << "=" << Cur_T_value << "ns" << endl;
-
+			cout << "Current Freq:" << "=" << org_freq << "MHz" << endl;
+			fout << "Current Freq:" << "=" << org_freq << "MHz" << endl;
 			cout << "Cur_V_SPEC:" << Vfrc << "=" << Cur_V_value << "V" << endl;
 			fout << "Cur_V_SPEC:" << Vfrc << "=" << Cur_V_value << "V" << endl;
 		ON_FIRST_INVOCATION_END();
@@ -431,11 +488,15 @@ protected:
 		//print current information
 		cout << "T_LL_Val=" << T_LL_Val << "ns" << endl;
 		cout << "T_UL_Val=" << T_UL_Val << "ns" << endl;
+		cout << "F_UL_Val=" << org_freq*Cur_T_value/T_LL_Val << "MHz" << endl;
+		cout << "F_LL_Val=" <<  org_freq*Cur_T_value/T_UL_Val << "MHz" << endl;
 		cout << "VScale_LL_Val=" << VScale_LL_Val <<"V"<< endl;
 		cout << "VScale_UL_Val=" << VScale_UL_Val <<"V"<< endl;
 
 		fout << "T_LL_Val=" << T_LL_Val << "ns" << endl;
 		fout << "T_UL_Val=" << T_UL_Val << "ns" << endl;
+		fout << "F_LL_Val=" << org_freq*Cur_T_value/T_LL_Val << "MHz" << endl;
+		fout << "F_UL_Val=" <<  org_freq*Cur_T_value/T_UL_Val << "MHz" << endl;
 		fout << "VScale_LL_Val=" << VScale_LL_Val <<"V"<< endl;
 		fout << "VScale_UL_Val=" << VScale_UL_Val <<"V"<< endl;
 		ON_FIRST_INVOCATION_END();
@@ -450,8 +511,11 @@ protected:
 			return;
 		}
 
-		cout << Tper << "(nS)\t" << endl;
-		fout << Tper << "(nS)\t" << "\n";
+//		cout << Tper << "(nS)\t" << endl;
+//		fout << Tper << "(nS)\t" << "\n";
+
+		cout << "frequency" << "(MHz)\t" << endl;
+		fout << "frequency" << "(MHZ)\t" << "\n";
 
 		ON_FIRST_INVOCATION_BEGIN();
 			CONNECT();
@@ -464,12 +528,15 @@ protected:
 				period = T_UL_Val - Tstep * Y;
 
 				ON_FIRST_INVOCATION_BEGIN()
+					 DISCONNECT();
+					 WAIT_TIME(10 ms);
+					 CONNECT();
+					 WAIT_TIME(10 ms);
 					Tspec.change(Tper, period);
 					FLUSH(TM::APRM);
 				ON_FIRST_INVOCATION_END();
-
-				printf("%6.1f\t", period);
-				sprintf(tmp_t, "%6.1f", period);
+				printf("%6.1f\t", org_freq*Cur_T_value/period);
+				sprintf(tmp_t, "%6.1f", org_freq*Cur_T_value/period);
 				fout << tmp_t << "\t";
 
 				for (X = 0; X < V_points; X++) {
@@ -486,10 +553,12 @@ protected:
 
 					aiCapData = VECTOR(vCap).getVectors();//get back the capture data
 
-					DOUBLE pct_return =  aiCapData[0]/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
+					long regVal = CaptDataProcess(aiCapData);
+
+					DOUBLE pct_return =  regVal/expect_cnt *100;//calculate the percentage of samples/(expect nonce cnt)
 					//print shmoo data
 
-					printf("%5.2f%s", pct_return,"%");
+					printf("%5.2f%s\t", pct_return,"%");
 					sprintf(tmp_v, "%5.2f%s", pct_return,"%");
 					fout << tmp_v << "\t";
 
@@ -507,8 +576,8 @@ protected:
 
 			{
 				DPS_Value = VScale_LL_Val + Vstep * X;
-				cout<<" ";
-				printf("%5.3f", DPS_Value);
+
+				printf("%5.3f\t", DPS_Value);
 				sprintf(tmp_v, "%5.3f", DPS_Value);
 				fout <<"  \t"<< tmp_v ;
 			}
@@ -540,6 +609,20 @@ protected:
 
 		return;
 	}
+
+
+	long  CaptDataProcess(ARRAY_I  capData)
+		{
+		  long regVal= 0; //initial regVal
+			for(int i = 0; i< capData.size();i++){
+				if(i<=7) {regVal = regVal | capData[i]<<(24+i);} //bit0~7 shift as the bit 24~31 of regVal
+				else if(i>7 && i<=15) {regVal = regVal | capData[i]<<(8+i);}//bit8~15 shift as the bit 16~23 of regVal
+				else if(i>15 && i<=23) {regVal = regVal | capData[i]<<(i-8);}//bit16~23 shift as the bit 8~15 of regVal
+				else  {regVal = regVal | capData[i]<<(i-24);}//bit24~31 shift as the bit 0~7 of regVal
+			}
+
+			return regVal;
+		}
 
 	/**
 	 *This function will be invoked once the specified parameter's value is changed.
@@ -590,22 +673,22 @@ virtual void initialize()
   addParameter("TScale_UL",
                "double",
                &TScale_UL)
-    .setDefault("1.2")
+    .setDefault("1.5")
     .setComment("Up Limit of Period Scale");
   addParameter("TScale_LL",
                "double",
                &TScale_LL)
-    .setDefault("0.8")
+    .setDefault("0.5")
     .setComment("Low Limit of Period Scale");
   addParameter("VScale_UL",
                "double",
                &VScale_UL)
-    .setDefault("1.2")
+    .setDefault("1.5")
     .setComment("Up Limit of Voltage Scale");
   addParameter("VScale_LL",
                "double",
                &VScale_LL)
-    .setDefault("0.8")
+    .setDefault("0.5")
     .setComment("Low Limit of Voltage Scale");
   addParameter("T_points",
                "int",
@@ -740,7 +823,7 @@ virtual void run()
 
 	    cout<<Tper<<"(nS)\t"<<endl;
 	    fout<<Tper<<"(nS)\t"<<endl;
-
+	     DISCONNECT();
 	     CONNECT();
 
 	     FUNCTIONAL_TEST();
@@ -770,12 +853,12 @@ virtual void run()
 	             {
 	               if(DPS_Value<=(Cur_V_value+0.000001)&&DPS_Value>=(Cur_V_value-0.000001)&&period<=(Cur_T_value+0.0000001)&&period>=(Cur_T_value-0.0000001))
 	               {
-					   cout<<setw(5)<<"*";
+					   cout<<setw(5)<<"*\t";
 					   fout<<setw(5)<<"*\t";
 	               }
 	               else
 	               {
-					   cout<<setw(5)<<"P";
+					   cout<<setw(5)<<"P\t";
 					   fout<<setw(5)<<"P\t";
 	               }
 	             }
@@ -784,12 +867,12 @@ virtual void run()
 
 	               if(DPS_Value<=(Cur_V_value+0.000001)&&DPS_Value>=(Cur_V_value-0.000001)&&period<=(Cur_T_value+0.0000001)&&period>=(Cur_T_value-0.0000001))
 	               {
-					   cout<<setw(5)<<"#";
+					   cout<<setw(5)<<"#\t";
 					   fout<<setw(5)<<"#\t";
 	               }
 	               else
 	               {
-					   cout<<setw(5)<<".";
+					   cout<<setw(5)<<".\t";
 					   fout<<setw(5)<<".\t";
 
 	               }
@@ -798,14 +881,14 @@ virtual void run()
 	        cout<<endl;
 	        fout<<"\n";
 	    }
-	    cout<<"\t\t";
+	    cout<<"\t";
 	    fout<<"\t\t";
 
 	    for(X=0;X<V_points;X++)
 
 	    {
 	       DPS_Value=VScale_LL_Val+Vstep*X;
-	       printf("%5.2f",DPS_Value);
+	       printf("%5.2f\t",DPS_Value);
 	       sprintf(tmp_v,"%5.2f",DPS_Value);
 	       fout<< tmp_v<<"\t";
 	    }
