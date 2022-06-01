@@ -58,7 +58,26 @@ string to_string(long n);
 
 
 vector<string> getUsedPortsPrimaryLabel(int debug_mode=0);   // returns the used ports in the running suite (the ports of the primary label
+/*
+ * func: auto-create serial digital capture variable
+ * param: int samples,int bitsPerWord,string vCap,string cap_pin,string mylabel
+ * example: GenSeriDigCapVar(1,32,"cap1","RO_RI","pm_chain")
+ */
+void GenSeriDigCapVar(int samples,int bitsPerWord,string vCap,string cap_pin,string mylabel);
 
+/*
+ * func: reverse raw 32-bit data,from MSB to LSB
+ * param: register unsigned int
+ * example: reverse(capData[i])
+ */
+unsigned int reverse(register unsigned int x);
+
+/*
+ * func: cut 32-bit data into 4 bytes
+ * param: unsigned int
+ * example: Word2Byte(tmpWord)
+ */
+ARRAY_I Word2Byte(unsigned int inData);
 
 extern int efuse_data[SITE_NUMBER][87];
 extern unsigned short crc2[SITE_NUMBER];

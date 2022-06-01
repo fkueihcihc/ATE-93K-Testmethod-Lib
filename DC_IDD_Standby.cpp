@@ -98,11 +98,13 @@ protected:
 
 		ON_FIRST_INVOCATION_BEGIN();
 		// 1. functional test to setup
+//			DISCONNECT();
+//			WAIT_TIME(5 ms);
 			CONNECT();
+//			WAIT_TIME(5 ms);
 			FUNCTIONAL_TEST();
 
-
-	//2. set DPS task measurement range
+	   //2. set DPS task measurement range
 			double iRange_min, iRange_max;  // measurement range
 			double upperl, lowerl;          // limit in the test table
 
@@ -133,7 +135,7 @@ protected:
 					cout << "Current measurement range: " << vPins[i] << "  +/-"<< iRange_max << " A"<< endl;
 				}
 			}
-	// 3. do the measurement and reset Sequencer
+	   // 3. do the measurement and reset Sequencer
 				dpsTask.wait(wait ms).samples(sample_count).trigMode(TM::INTERNAL).execMode("PVAL");
 				dpsTask.execute();
 
@@ -141,8 +143,8 @@ protected:
 
 		ON_FIRST_INVOCATION_END();
 
-//4. log result: parametric result and  set back test result to USER_DOUBLE
-// this part is outside of ON_FIRST_INVOCATION block
+      //4. log result: parametric result and  set back test result to USER_DOUBLE
+     // this part is outside of ON_FIRST_INVOCATION block
 
 		ValueRes.resize(pin_count);
 		for(int i=0;i<pin_count;i++)

@@ -81,7 +81,11 @@ protected:
 
 		ON_FIRST_INVOCATION_BEGIN();
 
+			DISCONNECT();
+
 			CONNECT();
+
+			WAIT_TIME(5 ms);
 
 			FW_TASK("RLYC IDLE,OFF,(@)");// all digital pins disconnected
 
